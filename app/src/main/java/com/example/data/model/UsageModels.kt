@@ -15,6 +15,18 @@ enum class UsageRange(val label: String) {
 }
 
 /**
+ * Represents a historical monthly billing cycle or calendar month period for inspection.
+ */
+data class MonthPeriod(
+  val id: String,
+  val title: String,
+  val shortLabel: String,
+  val startTimeMs: Long,
+  val endTimeMs: Long,
+  val isCurrent: Boolean
+)
+
+/**
  * Holds aggregated network usage bytes for Wi-Fi and Mobile.
  */
 data class UsageTotals(
@@ -29,7 +41,7 @@ data class UsageTotals(
 }
 
 /**
- * Aggregated daily usage point for the 30-day history scrubbable chart.
+ * Aggregated daily usage point for the history scrubbable chart.
  */
 data class DailyUsage(
   val epochDay: Long,
@@ -43,7 +55,7 @@ data class DailyUsage(
 }
 
 /**
- * Represents per-application usage.
+ * Represents per-application usage with enhanced identification and system categorization.
  */
 data class AppUsageItem(
   val uid: Int,
@@ -51,7 +63,9 @@ data class AppUsageItem(
   val appName: String,
   val icon: Drawable? = null,
   val wifiBytes: Long = 0L,
-  val mobileBytes: Long = 0L
+  val mobileBytes: Long = 0L,
+  val isSystem: Boolean = false,
+  val categoryLabel: String = ""
 ) {
   val totalBytes: Long get() = wifiBytes + mobileBytes
 }

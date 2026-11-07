@@ -57,7 +57,7 @@ fun HomeScreen(
   planForecast: PlanForecast,
   activeSims: List<SimInfo>,
   sevenDaysHistory: List<DailyUsage>,
-  onOpenSettings: () -> Unit,
+  onOpenSettings: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedSimIndex by remember { mutableIntStateOf(0) }
@@ -71,42 +71,22 @@ fun HomeScreen(
       .verticalScroll(scrollState)
       .padding(horizontal = 16.dp, vertical = 20.dp)
   ) {
-    // Header Row with Large Title 34 bold and Settings Gear
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically
+    // Header with Large Title 34 bold and Offline Telemetry subtitle
+    Column(
+      modifier = Modifier.fillMaxWidth()
     ) {
-      Column {
-        Text(
-          text = "NetTrace",
-          color = NetTraceColors.TextPrimary,
-          fontSize = 34.sp,
-          fontWeight = FontWeight.Bold,
-          letterSpacing = (-0.5).sp
-        )
-        Text(
-          text = "Offline Telemetry",
-          color = NetTraceColors.TextTertiary,
-          fontSize = 13.sp
-        )
-      }
-
-      IconButton(
-        onClick = onOpenSettings,
-        modifier = Modifier
-          .size(44.dp)
-          .clip(CircleShape)
-          .background(NetTraceColors.Surface)
-          .border(1.dp, NetTraceColors.Hairline, CircleShape)
-      ) {
-        Icon(
-          imageVector = NetTraceIcons.Gear,
-          contentDescription = "Settings",
-          tint = NetTraceColors.TextSecondary,
-          modifier = Modifier.size(20.dp)
-        )
-      }
+      Text(
+        text = "NetTrace",
+        color = NetTraceColors.TextPrimary,
+        fontSize = 34.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.5).sp
+      )
+      Text(
+        text = "Offline Telemetry",
+        color = NetTraceColors.TextTertiary,
+        fontSize = 13.sp
+      )
     }
 
     Spacer(modifier = Modifier.height(16.dp))

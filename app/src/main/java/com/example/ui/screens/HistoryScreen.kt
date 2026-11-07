@@ -1,7 +1,12 @@
 package com.example.ui.screens
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,58 +31,130 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AppUsageItem
 import com.example.data.model.DailyUsage
+import com.example.data.model.MonthPeriod
 import com.example.data.model.UsageFormatters
+import com.example.ui.components.AppUsageBarItem
 import com.example.ui.components.HistoryBarChartCanvas
 import com.example.ui.theme.NetTraceColors
+import com.example.ui.theme.NetTraceMotion
 import com.example.ui.theme.pressScaleEffect
 
 /**
  * NetTrace History Screen:
- * 30-day interactive scrubbable daily bar chart with dashed plan pace reference,
- * value bubble, and daily breakdown cards.
+ * Multi-month historical telemetry inspector allowing users to browse past months/cycles,
+ * interactive scrubbable daily bar chart, pace target line for current cycle,
+ * aggregation totals, and top application breakdown for the selected period.
  */
 @Composable
 fun HistoryScreen(
+  availablePeriods: List<MonthPeriod>,
+  selectedPeriod: MonthPeriod,
+  onSelectPeriod: (MonthPeriod) -> Unit,
   dailyList: List<DailyUsage>,
   dailyPaceBytes: Long,
+  planLimitBytes: Long = 0L,
+  topAppsForPeriod: List<AppUsageItem> = emptyList(),
   modifier: Modifier = Modifier
 ) {
-  var selectedDay by remember { mutableStateOf<DailyUsage?>(null) }
-  val scrollState = rememberScrollState()
+  var selectedDay by remember(selectedPeriod) { mutableStateOf<DailyUsage?>(null) }
+  val verticalScrollState = rememberScrollState()
+  val horizontalScrollState = rememberScrollState()
+  val view = LocalView.current
 
-  val total30dMobile = dailyList.sumOf { it.mobileBytes }
-  val total30dWifi = dailyList.sumOf { it.wifiBytes }
+  val totalMobile = dailyList.sumOf { it.mobileBytes }
+  val totalWifi = dailyList.sumOf { it.wifiBytes }
   val activeDaysCount = dailyList.size.coerceAtLeast(1)
-  val averageDaily = (total30dMobile + total30dWifi) / activeDaysCount
+  val averageDaily = (totalMobile + totalWifi) / activeDaysCount
 
   Column(
     modifier = modifier
       .fillMaxSize()
       .background(NetTraceColors.Background)
-      .verticalScroll(scrollState)
+      .verticalScroll(verticalScrollState)
       .padding(horizontal = 16.dp, vertical = 20.dp)
   ) {
     // Header
     Text(
-      text = "30-Day History",
+      text = "Usage History",
       color = NetTraceColors.TextPrimary,
       fontSize = 34.sp,
       fontWeight = FontWeight.Bold,
       letterSpacing = (-0.5).sp
     )
     Text(
-      text = "Touch or drag across bars to scrub daily telemetry",
+      text = "Inspect current and previous months' data consumption",
       color = NetTraceColors.TextTertiary,
       fontSize = 13.sp
     )
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Scrubbable Bar Chart Card
+    // 1. Month / Billing Period Selector Pill Row
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .horizontalScroll(horizontalScrollState),
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+      availablePeriods.forEach { period ->
+        val isSelected = (period.id == selectedPeriod.id)
+
+        val pillBg by animateColorAsState(
+          targetValue = if (isSelected) NetTraceColors.Raised else NetTraceColors.Surface,
+          animationSpec = NetTraceMotion.springSpec(),
+          label = "period_pill_bg_${period.id}"
+        )
+        val pillBorder by animateColorAsState(
+          targetValue = if (isSelected) NetTraceColors.Wifi else NetTraceColors.Hairline,
+          animationSpec = NetTraceMotion.springSpec(),
+          label = "period_pill_border_${period.id}"
+        )
+
+        Row(
+          modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(pillBg)
+            .border(if (isSelected) 1.5.dp else 1.dp, pillBorder, RoundedCornerShape(20.dp))
+            .clickable(
+              interactionSource = remember { MutableInteractionSource() },
+              indication = null
+            ) {
+              if (!isSelected) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onSelectPeriod(period)
+              }
+            }
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          if (period.isCurrent) {
+            Box(
+              modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(NetTraceColors.Mobile)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+          }
+          Text(
+            text = period.title,
+            color = if (isSelected) NetTraceColors.TextPrimary else NetTraceColors.TextSecondary,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+          )
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // 2. Scrubbable Bar Chart Card for the Selected Period
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -93,33 +170,57 @@ fun HistoryScreen(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Text(
-            text = "Daily Consumption",
-            color = NetTraceColors.TextPrimary,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold
-          )
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(NetTraceColors.Warning)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
+          Column {
             Text(
-              text = "Pace target",
+              text = if (selectedPeriod.isCurrent) "Daily Consumption" else "${selectedPeriod.shortLabel} Daily Breakdown",
+              color = NetTraceColors.TextPrimary,
+              fontSize = 18.sp,
+              fontWeight = FontWeight.SemiBold
+            )
+            Text(
+              text = "${dailyList.size} days recorded",
               color = NetTraceColors.TextTertiary,
               fontSize = 12.sp
             )
           }
+
+          if (selectedPeriod.isCurrent && dailyPaceBytes > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(NetTraceColors.Warning)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "Pace target",
+                color = NetTraceColors.TextTertiary,
+                fontSize = 12.sp
+              )
+            }
+          } else {
+            Box(
+              modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(NetTraceColors.Raised)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+              Text(
+                text = "Historical",
+                color = NetTraceColors.TextTertiary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+              )
+            }
+          }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         HistoryBarChartCanvas(
           dailyList = dailyList,
-          dailyPaceBytes = dailyPaceBytes,
+          dailyPaceBytes = if (selectedPeriod.isCurrent) dailyPaceBytes else 0L,
           onDaySelected = { selectedDay = it }
         )
 
@@ -139,7 +240,7 @@ fun HistoryScreen(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-              text = "Mobile",
+              text = "Cellular",
               color = NetTraceColors.TextSecondary,
               fontSize = 12.sp
             )
@@ -165,7 +266,7 @@ fun HistoryScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Scrubbed Day Inspection Card
+    // 3. Scrubbed Day Inspection Card
     val dayToInspect = selectedDay ?: dailyList.lastOrNull()
     if (dayToInspect != null) {
       Box(
@@ -236,7 +337,7 @@ fun HistoryScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 30-Day Aggregation Summary Card
+    // 4. Period Aggregation Summary Card
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -247,7 +348,7 @@ fun HistoryScreen(
     ) {
       Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-          text = "30-Day Cumulative",
+          text = "${selectedPeriod.title} Cumulative",
           color = NetTraceColors.TextSecondary,
           fontSize = 13.sp,
           fontWeight = FontWeight.Medium
@@ -261,7 +362,7 @@ fun HistoryScreen(
         ) {
           Column {
             Text(
-              text = UsageFormatters.formatBytes(total30dMobile),
+              text = UsageFormatters.formatBytes(totalMobile),
               color = NetTraceColors.TextPrimary,
               fontSize = 20.sp,
               fontWeight = FontWeight.Bold
@@ -275,7 +376,7 @@ fun HistoryScreen(
 
           Column {
             Text(
-              text = UsageFormatters.formatBytes(total30dWifi),
+              text = UsageFormatters.formatBytes(totalWifi),
               color = NetTraceColors.TextPrimary,
               fontSize = 20.sp,
               fontWeight = FontWeight.Bold
@@ -301,9 +402,60 @@ fun HistoryScreen(
             )
           }
         }
+
+        if (planLimitBytes > 0) {
+          Spacer(modifier = Modifier.height(12.dp))
+          val usagePercent = (totalMobile.toFloat() / planLimitBytes.toFloat()).coerceIn(0f, 2f)
+          val percentInt = (usagePercent * 100f).toInt()
+
+          Text(
+            text = "Used $percentInt% of configured monthly allowance (${UsageFormatters.formatBytes(planLimitBytes)})",
+            color = if (percentInt > 100) NetTraceColors.Critical else if (percentInt > 80) NetTraceColors.Warning else NetTraceColors.TextTertiary,
+            fontSize = 11.sp
+          )
+        }
       }
     }
 
-    Spacer(modifier = Modifier.height(80.dp)) // Padding above bottom bar
+    // 5. Top Applications for the Selected Month (if available)
+    if (topAppsForPeriod.isNotEmpty()) {
+      Spacer(modifier = Modifier.height(16.dp))
+
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(24.dp))
+          .background(NetTraceColors.Surface)
+          .border(1.dp, NetTraceColors.Hairline, RoundedCornerShape(24.dp))
+          .padding(18.dp)
+      ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Text(
+            text = "Top Apps for ${selectedPeriod.shortLabel}",
+            color = NetTraceColors.TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+          )
+          Text(
+            text = "Highest data consumers during this period",
+            color = NetTraceColors.TextTertiary,
+            fontSize = 11.sp
+          )
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          val maxAppBytes = topAppsForPeriod.firstOrNull()?.totalBytes ?: 1L
+          topAppsForPeriod.forEachIndexed { idx, app ->
+            AppUsageBarItem(
+              item = app,
+              maxBytes = maxAppBytes,
+              index = idx
+            )
+          }
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(80.dp)) // Clearance for bottom navigation bar
   }
 }

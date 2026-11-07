@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -68,9 +69,9 @@ import kotlinx.coroutines.launch
 
 /**
  * NetTrace Settings Screen:
- * Configures appearance/themes (System default, Dark, Light),
- * per-SIM plan limits, billing cycle reset day, alert threshold %,
- * runtime notification permission handling, and CSV telemetry export.
+ * Configures per-SIM plan limits, billing cycle reset day, alert threshold %,
+ * runtime notification permission handling, CSV telemetry export,
+ * and appearance/theme options arranged horizontally as the final section.
  */
 @Composable
 fun SettingsScreen(
@@ -192,7 +193,7 @@ fun SettingsScreen(
           fontWeight = FontWeight.Bold
         )
         Text(
-          text = "Theme, data plans, alerts & export",
+          text = "Data plans, alerts & preferences",
           color = NetTraceColors.TextTertiary,
           fontSize = 12.sp
         )
@@ -201,127 +202,7 @@ fun SettingsScreen(
 
     Spacer(modifier = Modifier.height(20.dp))
 
-    // Section 1: Themes & Appearance
-    SettingsCard(title = "Appearance & Theme") {
-      Text(
-        text = "Choose how NetTrace looks on your device.",
-        color = NetTraceColors.TextSecondary,
-        fontSize = 13.sp
-      )
-
-      Spacer(modifier = Modifier.height(14.dp))
-
-      val themes = listOf(
-        ThemeOption(
-          id = "system",
-          title = "System Mode",
-          subtitle = "Follows Android system appearance (Default)",
-          icon = NetTraceIcons.Cellular
-        ),
-        ThemeOption(
-          id = "dark",
-          title = "Dark Theme",
-          subtitle = "OLED true-black background (#000)",
-          icon = NetTraceIcons.Moon
-        ),
-        ThemeOption(
-          id = "light",
-          title = "Light Theme",
-          subtitle = "Clean, high-clarity quiet light styling",
-          icon = NetTraceIcons.Sun
-        )
-      )
-
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        themes.forEach { option ->
-          val isSelected = (themeMode.lowercase() == option.id)
-
-          val itemBg by animateColorAsState(
-            targetValue = if (isSelected) NetTraceColors.Raised else NetTraceColors.Surface,
-            animationSpec = NetTraceMotion.springSpec(),
-            label = "theme_bg_${option.id}"
-          )
-          val itemBorder by animateColorAsState(
-            targetValue = if (isSelected) NetTraceColors.Wifi else NetTraceColors.Hairline,
-            animationSpec = NetTraceMotion.springSpec(),
-            label = "theme_border_${option.id}"
-          )
-
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clip(RoundedCornerShape(16.dp))
-              .background(itemBg)
-              .border(1.dp, itemBorder, RoundedCornerShape(16.dp))
-              .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-              ) {
-                onUpdateThemeMode(option.id)
-              }
-              .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Box(
-              modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(if (isSelected) NetTraceColors.Wifi.copy(alpha = 0.15f) else NetTraceColors.Raised),
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(
-                imageVector = option.icon,
-                contentDescription = null,
-                tint = if (isSelected) NetTraceColors.Wifi else NetTraceColors.TextSecondary,
-                modifier = Modifier.size(18.dp)
-              )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = option.title,
-                color = if (isSelected) NetTraceColors.TextPrimary else NetTraceColors.TextSecondary,
-                fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-              )
-              Text(
-                text = option.subtitle,
-                color = NetTraceColors.TextTertiary,
-                fontSize = 11.sp
-              )
-            }
-
-            // Selection radio circle
-            Box(
-              modifier = Modifier
-                .size(20.dp)
-                .clip(CircleShape)
-                .border(
-                  width = 2.dp,
-                  color = if (isSelected) NetTraceColors.Wifi else NetTraceColors.TextTertiary,
-                  shape = CircleShape
-                ),
-              contentAlignment = Alignment.Center
-            ) {
-              if (isSelected) {
-                Box(
-                  modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(NetTraceColors.Wifi)
-                )
-              }
-            }
-          }
-        }
-      }
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    // Section 2: Cellular Plan Sizes
+    // Section 1: Cellular Plan Sizes
     SettingsCard(title = "Data Plans") {
       Text(
         text = "SIM 1 Monthly Allowance (GB)",
@@ -417,7 +298,7 @@ fun SettingsScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Section 3: Threshold Alerts & Notification Permission
+    // Section 2: Threshold Alerts & Notification Permission
     SettingsCard(title = "Alerts & Notifications") {
       // Permission Banner if permission missing on Android 13+
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
@@ -559,7 +440,7 @@ fun SettingsScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Section 4: CSV Export
+    // Section 3: CSV Export
     SettingsCard(title = "Data Management") {
       Text(
         text = "Export Telemetry to CSV",
@@ -569,7 +450,7 @@ fun SettingsScreen(
       )
       Spacer(modifier = Modifier.height(4.dp))
       Text(
-        text = "Export 30-day historical usage, dual-SIM breakdown, and top applications as a spreadsheet.",
+        text = "Export historical usage, dual-SIM breakdown, and top applications as a spreadsheet.",
         color = NetTraceColors.TextTertiary,
         fontSize = 12.sp,
         lineHeight = 16.sp
@@ -606,7 +487,135 @@ fun SettingsScreen(
       }
     }
 
-    Spacer(modifier = Modifier.height(40.dp))
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // Section 4: Appearance & Theme (Positioned LAST, with 3 Horizontal Option Cards)
+    SettingsCard(title = "Appearance & Theme") {
+      Text(
+        text = "Select your preferred appearance mode:",
+        color = NetTraceColors.TextSecondary,
+        fontSize = 13.sp
+      )
+
+      Spacer(modifier = Modifier.height(14.dp))
+
+      val themes = listOf(
+        ThemeOption(
+          id = "system",
+          title = "System",
+          subtitle = "Default",
+          icon = NetTraceIcons.Cellular
+        ),
+        ThemeOption(
+          id = "dark",
+          title = "Dark",
+          subtitle = "OLED Black",
+          icon = NetTraceIcons.Moon
+        ),
+        ThemeOption(
+          id = "light",
+          title = "Light",
+          subtitle = "Quiet Light",
+          icon = NetTraceIcons.Sun
+        )
+      )
+
+      // 3 Horizontal Option Cards in a single responsive Row
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        themes.forEach { option ->
+          val isSelected = (themeMode.lowercase() == option.id)
+
+          val itemBg by animateColorAsState(
+            targetValue = if (isSelected) NetTraceColors.Raised else NetTraceColors.Surface,
+            animationSpec = NetTraceMotion.springSpec(),
+            label = "theme_card_bg_${option.id}"
+          )
+          val itemBorder by animateColorAsState(
+            targetValue = if (isSelected) NetTraceColors.Wifi else NetTraceColors.Hairline,
+            animationSpec = NetTraceMotion.springSpec(),
+            label = "theme_card_border_${option.id}"
+          )
+
+          Column(
+            modifier = Modifier
+              .weight(1f)
+              .clip(RoundedCornerShape(16.dp))
+              .background(itemBg)
+              .border(if (isSelected) 1.5.dp else 1.dp, itemBorder, RoundedCornerShape(16.dp))
+              .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+              ) {
+                onUpdateThemeMode(option.id)
+              }
+              .padding(vertical = 14.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+          ) {
+            Box(
+              modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (isSelected) NetTraceColors.Wifi.copy(alpha = 0.18f) else NetTraceColors.Raised),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = option.icon,
+                contentDescription = option.title,
+                tint = if (isSelected) NetTraceColors.Wifi else NetTraceColors.TextSecondary,
+                modifier = Modifier.size(18.dp)
+              )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+              text = option.title,
+              color = if (isSelected) NetTraceColors.TextPrimary else NetTraceColors.TextSecondary,
+              fontSize = 13.sp,
+              fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+              textAlign = TextAlign.Center
+            )
+
+            Text(
+              text = option.subtitle,
+              color = if (isSelected) NetTraceColors.Wifi else NetTraceColors.TextTertiary,
+              fontSize = 10.sp,
+              textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Radio dot indicator
+            Box(
+              modifier = Modifier
+                .size(16.dp)
+                .clip(CircleShape)
+                .border(
+                  width = 1.5.dp,
+                  color = if (isSelected) NetTraceColors.Wifi else NetTraceColors.TextTertiary,
+                  shape = CircleShape
+                ),
+              contentAlignment = Alignment.Center
+            ) {
+              if (isSelected) {
+                Box(
+                  modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(NetTraceColors.Wifi)
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(80.dp)) // Clearance for bottom navigation bar
   }
 }
 

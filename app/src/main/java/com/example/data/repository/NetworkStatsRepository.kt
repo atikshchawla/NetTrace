@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Process
 import com.example.data.model.AppUsageItem
 import com.example.data.model.DailyUsage
+import com.example.data.model.MonthPeriod
 import com.example.data.model.PlanForecast
 import com.example.data.model.UsageRange
 import com.example.data.model.UsageTotals
@@ -141,15 +142,17 @@ class NetworkStatsRepository(private val context: Context) {
       val totalBytes = wifiBytes + mobileBytes
       if (totalBytes <= 0L) continue
 
-      val (pkgName, appName, icon) = resolveUidAppDetails(uid)
+      val details = resolveUidAppDetails(uid)
       appItems.add(
         AppUsageItem(
           uid = uid,
-          packageName = pkgName,
-          appName = appName,
-          icon = icon,
+          packageName = details.packageName,
+          appName = details.appName,
+          icon = details.icon,
           wifiBytes = wifiBytes,
-          mobileBytes = mobileBytes
+          mobileBytes = mobileBytes,
+          isSystem = details.isSystem,
+          categoryLabel = details.categoryLabel
         )
       )
     }
@@ -158,32 +161,148 @@ class NetworkStatsRepository(private val context: Context) {
     appItems.sortedByDescending { it.totalBytes }.take(limit)
   }
 
+  private data class ResolvedApp(
+    val packageName: String,
+    val appName: String,
+    val icon: android.graphics.drawable.Drawable? = null,
+    val isSystem: Boolean = false,
+    val categoryLabel: String = ""
+  )
+
   /**
-   * Maps a Linux UID to app name, package name, and launcher icon.
-   * Handles Android system UIDs (UID 0, 1000, 1073, etc.).
+   * Maps a Linux UID to app name, package name, launcher icon, and system category.
+   * Handles Android system UIDs, tethering, uninstalled apps, and third-party packages.
    */
-  private fun resolveUidAppDetails(uid: Int): Triple<String, String, android.graphics.drawable.Drawable?> {
+  private fun resolveUidAppDetails(uid: Int): ResolvedApp {
     when (uid) {
-      0 -> return Triple("android.root", "OS Kernel & Root", null)
-      1000 -> return Triple("android.system", "Android System", null)
-      1073 -> return Triple("com.android.networkstack", "Network Stack", null)
+      0 -> return ResolvedApp("android.kernel", "Android Kernel & OS", null, isSystem = true, categoryLabel = "Kernel")
+      1000 -> return ResolvedApp("android.system", "System Framework", null, isSystem = true, categoryLabel = "System")
+      1001 -> return ResolvedApp("com.android.phone", "Phone & Cellular Radio", null, isSystem = true, categoryLabel = "Cellular")
+      1002 -> return ResolvedApp("com.android.bluetooth", "Bluetooth Stack", null, isSystem = true, categoryLabel = "Bluetooth")
+      1013 -> return ResolvedApp("android.media", "Media & Audio Services", null, isSystem = true, categoryLabel = "Audio")
+      1020 -> return ResolvedApp("com.android.nfc", "NFC Services", null, isSystem = true, categoryLabel = "NFC")
+      1052, 1073 -> return ResolvedApp("com.android.networkstack", "Network Stack & Hotspot", null, isSystem = true, categoryLabel = "Network")
+      -4, 10044 -> return ResolvedApp("android.uid.removed", "Uninstalled Applications", null, isSystem = false, categoryLabel = "Removed")
+      -5 -> return ResolvedApp("android.uid.tethering", "Personal Hotspot & Tethering", null, isSystem = true, categoryLabel = "Hotspot")
     }
 
     val packages = packageManager.getPackagesForUid(uid)
     if (packages.isNullOrEmpty()) {
-      return Triple("uid.$uid", "UID $uid", null)
+      return if (uid < 10000) {
+        ResolvedApp("system.daemon.$uid", "System Service ($uid)", null, isSystem = true, categoryLabel = "System")
+      } else {
+        ResolvedApp("app.removed.$uid", "Removed App ($uid)", null, isSystem = false, categoryLabel = "Removed")
+      }
     }
 
-    // Pick primary package
     val primaryPkg = packages[0]
     return try {
       val appInfo = packageManager.getApplicationInfo(primaryPkg, 0)
       val label = packageManager.getApplicationLabel(appInfo).toString()
       val icon = packageManager.getApplicationIcon(appInfo)
-      Triple(primaryPkg, label, icon)
+      val isSys = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+      ResolvedApp(
+        packageName = primaryPkg,
+        appName = if (label.isNotBlank()) label else primaryPkg,
+        icon = icon,
+        isSystem = isSys,
+        categoryLabel = if (isSys) "System" else "App"
+      )
     } catch (_: Exception) {
-      Triple(primaryPkg, primaryPkg, null)
+      val isSys = uid < 10000
+      ResolvedApp(primaryPkg, primaryPkg, null, isSystem = isSys, categoryLabel = if (isSys) "System" else "App")
     }
+  }
+
+  /**
+   * Generates a list of the last [monthsCount] calendar months for historical review.
+   */
+  fun getHistoricalMonthPeriods(monthsCount: Int = 6): List<MonthPeriod> {
+    val list = mutableListOf<MonthPeriod>()
+    val cal = Calendar.getInstance()
+    val now = System.currentTimeMillis()
+
+    for (i in 0 until monthsCount) {
+      val monthCal = (cal.clone() as Calendar).apply {
+        add(Calendar.MONTH, -i)
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+      }
+      val startMs = monthCal.timeInMillis
+      val maxDays = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+      val endCal = (monthCal.clone() as Calendar).apply {
+        set(Calendar.DAY_OF_MONTH, maxDays)
+        set(Calendar.HOUR_OF_DAY, 23)
+        set(Calendar.MINUTE, 59)
+        set(Calendar.SECOND, 59)
+        set(Calendar.MILLISECOND, 999)
+      }
+      val endMs = if (i == 0) now else endCal.timeInMillis
+
+      val monthTitleFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+      val shortFormat = SimpleDateFormat("MMM", Locale.getDefault())
+      val idFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+
+      val title = if (i == 0) "This Month (${shortFormat.format(monthCal.time)})" else monthTitleFormat.format(monthCal.time)
+      val shortLabel = shortFormat.format(monthCal.time)
+      val id = idFormat.format(monthCal.time)
+
+      list.add(
+        MonthPeriod(
+          id = id,
+          title = title,
+          shortLabel = shortLabel,
+          startTimeMs = startMs,
+          endTimeMs = endMs,
+          isCurrent = (i == 0)
+        )
+      )
+    }
+    return list
+  }
+
+  /**
+   * Queries day-by-day usage for a specific historical month or time period.
+   */
+  suspend fun queryDailyHistoryForPeriod(period: MonthPeriod): List<DailyUsage> = withContext(Dispatchers.IO) {
+    if (!hasUsageAccessPermission()) return@withContext emptyList()
+    val result = mutableListOf<DailyUsage>()
+    val cur = Calendar.getInstance().apply {
+      timeInMillis = period.startTimeMs
+      set(Calendar.HOUR_OF_DAY, 0)
+      set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+    }
+    val endCal = Calendar.getInstance().apply {
+      timeInMillis = period.endTimeMs
+    }
+
+    val dateFormat = SimpleDateFormat("MMM d", Locale.getDefault())
+
+    while (!cur.after(endCal)) {
+      val startOfDay = cur.timeInMillis
+      val endOfDay = (startOfDay + TimeUnit.DAYS.toMillis(1) - 1L).coerceAtMost(period.endTimeMs)
+
+      val totals = queryDeviceTotals(startOfDay, endOfDay)
+      val epochDay = TimeUnit.MILLISECONDS.toDays(startOfDay)
+      val label = dateFormat.format(Date(startOfDay))
+
+      result.add(
+        DailyUsage(
+          epochDay = epochDay,
+          dateLabel = label,
+          wifiBytes = totals.totalWifiBytes,
+          mobileBytes = totals.totalMobileBytes
+        )
+      )
+      cur.add(Calendar.DAY_OF_MONTH, 1)
+    }
+
+    result
   }
 
   /**

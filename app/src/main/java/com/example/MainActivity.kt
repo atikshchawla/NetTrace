@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.example.data.model.AppUsageItem
 import com.example.data.model.DailyUsage
+import com.example.data.model.MonthPeriod
 import com.example.data.model.PlanForecast
 import com.example.data.model.SimInfo
 import com.example.data.model.SimLogEntry
@@ -57,7 +58,7 @@ import kotlinx.coroutines.launch
 /**
  * NetTrace MainActivity:
  * Single-activity architecture hosting Home, Apps, History, and Settings.
- * Manages theme collection, runtime notification permission requests, and usage access.
+ * Manages theme collection, runtime notification permission requests, multi-month historical inspection, and usage access.
  */
 class MainActivity : ComponentActivity() {
 
@@ -176,6 +177,12 @@ fun NetTraceRootApp(
   var simEntries by remember { mutableStateOf<List<SimLogEntry>>(emptyList()) }
   var appUsageList by remember { mutableStateOf<List<AppUsageItem>>(emptyList()) }
 
+  // Multi-Month Historical Telemetry State
+  val availablePeriods = remember { networkStatsRepo.getHistoricalMonthPeriods(6) }
+  var selectedPeriod by remember { mutableStateOf(availablePeriods.first()) }
+  var historyDailyList by remember { mutableStateOf<List<DailyUsage>>(emptyList()) }
+  var historyTopApps by remember { mutableStateOf<List<AppUsageItem>>(emptyList()) }
+
   // Load telemetry when parameters change
   LaunchedEffect(hasUsagePermission, cycleResetDay, planSizeMbSim1, appsRange) {
     try {
@@ -201,8 +208,18 @@ fun NetTraceRootApp(
       simEntries = dataStoreRepo.getAllSimEntries()
 
       val (rangeStart, rangeEnd) = networkStatsRepo.getRangeTimestamps(appsRange, cycleResetDay)
-      appUsageList = networkStatsRepo.queryAppUsage(rangeStart, rangeEnd, limit = 20)
+      appUsageList = networkStatsRepo.queryAppUsage(rangeStart, rangeEnd, limit = 30)
     } catch (_: Exception) {}
+  }
+
+  // Load historical month data when selectedPeriod changes
+  LaunchedEffect(selectedPeriod, hasUsagePermission) {
+    if (hasUsagePermission) {
+      try {
+        historyDailyList = networkStatsRepo.queryDailyHistoryForPeriod(selectedPeriod)
+        historyTopApps = networkStatsRepo.queryAppUsage(selectedPeriod.startTimeMs, selectedPeriod.endTimeMs, limit = 5)
+      } catch (_: Exception) {}
+    }
   }
 
   // Back handler for settings screen
@@ -253,8 +270,13 @@ fun NetTraceRootApp(
             appList = appUsageList
           )
           Screen.HISTORY -> HistoryScreen(
-            dailyList = thirtyDaysHistory,
-            dailyPaceBytes = planForecast.dailyPaceBytes
+            availablePeriods = availablePeriods,
+            selectedPeriod = selectedPeriod,
+            onSelectPeriod = { selectedPeriod = it },
+            dailyList = if (historyDailyList.isNotEmpty()) historyDailyList else thirtyDaysHistory,
+            dailyPaceBytes = planForecast.dailyPaceBytes,
+            planLimitBytes = planSizeMbSim1 * 1024L * 1024L,
+            topAppsForPeriod = historyTopApps
           )
           Screen.SETTINGS -> SettingsScreen(
             themeMode = themeMode,
