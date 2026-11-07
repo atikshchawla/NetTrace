@@ -1,0 +1,6 @@
+{
+  "name": "NetTrace",
+  "description": "Lightweight, offline mobile and Wi-Fi data usage tracker with plan alerts and dual-SIM support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

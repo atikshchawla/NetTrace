@@ -1,0 +1,32 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Wi-Fi wave arc 1 -->
+    <path
+        android:strokeColor="#0A84FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M38,44 C42.5,39.5 48,37 54,37 C60,37 65.5,39.5 70,44" />
+    <!-- Wi-Fi wave arc 2 -->
+    <path
+        android:strokeColor="#0A84FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M44,51 C46.8,48 50.3,46.5 54,46.5 C57.7,46.5 61.2,48 64,51" />
+    <!-- Center pulse core -->
+    <path
+        android:fillColor="#0A84FF"
+        android:pathData="M54,58 A3.5,3.5 0 1 1 53.99,58" />
+    <!-- Mobile data trace telemetry line -->
+    <path
+        android:strokeColor="#30D158"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,72 L46,72 L51,65 L57,77 L62,72 L74,72" />
+</vector>
