@@ -365,4 +365,71 @@ object NetTraceIcons {
       }
     }.build()
   }
+
+  val ChevronLeft: ImageVector by lazy {
+    ImageVector.Builder(
+      name = "ChevronLeft",
+      defaultWidth = 24.dp,
+      defaultHeight = 24.dp,
+      viewportWidth = 24f,
+      viewportHeight = 24f
+    ).apply {
+      path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 2.5f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+      ) {
+        moveTo(15f, 18f)
+        lineTo(9f, 12f)
+        lineTo(15f, 6f)
+      }
+    }.build()
+  }
+
+  val ChevronRight: ImageVector by lazy {
+    ImageVector.Builder(
+      name = "ChevronRight",
+      defaultWidth = 24.dp,
+      defaultHeight = 24.dp,
+      viewportWidth = 24f,
+      viewportHeight = 24f
+    ).apply {
+      path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 2.5f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+      ) {
+        moveTo(9f, 6f)
+        lineTo(15f, 12f)
+        lineTo(9f, 18f)
+      }
+    }.build()
+  }
+
+  val Speed: ImageVector by lazy {
+    ImageVector.Builder(
+      name = "Speed",
+      defaultWidth = 24.dp,
+      defaultHeight = 24.dp,
+      viewportWidth = 24f,
+      viewportHeight = 24f
+    ).apply {
+      path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 2f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+      ) {
+        moveTo(12f, 16f)
+        lineTo(15f, 11f)
+        moveTo(4.93f, 19.07f)
+        curveTo(3.12f, 17.26f, 2f, 14.76f, 2f, 12f)
+        curveTo(2f, 6.48f, 6.48f, 2f, 12f, 2f)
+        curveTo(17.52f, 2f, 22f, 6.48f, 22f, 12f)
+        curveTo(22f, 14.76f, 20.88f, 17.26f, 19.07f, 19.07f)
+      }
+    }.build()
+  }
 }

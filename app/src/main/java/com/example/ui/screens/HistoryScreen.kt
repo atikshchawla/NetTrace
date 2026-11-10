@@ -1,7 +1,12 @@
 package com.example.ui.screens
 
 import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,8 +27,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import com.example.ui.components.NetTraceIcons
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,16 +50,22 @@ import com.example.data.model.DailyUsage
 import com.example.data.model.MonthPeriod
 import com.example.data.model.UsageFormatters
 import com.example.ui.components.AppUsageBarItem
+import com.example.ui.components.D3LineGraphCanvas
 import com.example.ui.components.HistoryBarChartCanvas
 import com.example.ui.theme.NetTraceColors
 import com.example.ui.theme.NetTraceMotion
 import com.example.ui.theme.pressScaleEffect
 
+enum class ChartType(val label: String) {
+  LINE("Line"),
+  BAR("Bar")
+}
+
 /**
  * NetTrace History Screen:
  * Multi-month historical telemetry inspector allowing users to browse past months/cycles,
- * interactive scrubbable daily bar chart, pace target line for current cycle,
- * aggregation totals, and top application breakdown for the selected period.
+ * interactive scrubbable D3/Recharts-style smooth monotone line graph or bar chart,
+ * pace target line for current cycle, aggregation totals, and top application breakdown.
  */
 @Composable
 fun HistoryScreen(
@@ -63,8 +79,8 @@ fun HistoryScreen(
   modifier: Modifier = Modifier
 ) {
   var selectedDay by remember(selectedPeriod) { mutableStateOf<DailyUsage?>(null) }
+  var chartType by remember { mutableStateOf(ChartType.LINE) }
   val verticalScrollState = rememberScrollState()
-  val horizontalScrollState = rememberScrollState()
   val view = LocalView.current
 
   val totalMobile = dailyList.sumOf { it.mobileBytes }
@@ -95,58 +111,101 @@ fun HistoryScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 1. Month / Billing Period Selector Pill Row
-    Row(
+    // 1. Previous & Next Month Stepper Card (< Month Year >)
+    val currentIndex = availablePeriods.indexOfFirst { it.id == selectedPeriod.id }.coerceAtLeast(0)
+    val canGoBack = currentIndex < availablePeriods.lastIndex
+    val canGoForward = currentIndex > 0
+
+    Box(
       modifier = Modifier
         .fillMaxWidth()
-        .horizontalScroll(horizontalScrollState),
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
+        .clip(RoundedCornerShape(24.dp))
+        .background(NetTraceColors.Surface)
+        .border(1.dp, NetTraceColors.Hairline, RoundedCornerShape(24.dp))
+        .padding(horizontal = 8.dp, vertical = 10.dp)
     ) {
-      availablePeriods.forEach { period ->
-        val isSelected = (period.id == selectedPeriod.id)
-
-        val pillBg by animateColorAsState(
-          targetValue = if (isSelected) NetTraceColors.Raised else NetTraceColors.Surface,
-          animationSpec = NetTraceMotion.springSpec(),
-          label = "period_pill_bg_${period.id}"
-        )
-        val pillBorder by animateColorAsState(
-          targetValue = if (isSelected) NetTraceColors.Wifi else NetTraceColors.Hairline,
-          animationSpec = NetTraceMotion.springSpec(),
-          label = "period_pill_border_${period.id}"
-        )
-
-        Row(
-          modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(pillBg)
-            .border(if (isSelected) 1.5.dp else 1.dp, pillBorder, RoundedCornerShape(20.dp))
-            .clickable(
-              interactionSource = remember { MutableInteractionSource() },
-              indication = null
-            ) {
-              if (!isSelected) {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                onSelectPeriod(period)
-              }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // Previous Month Button (<)
+        IconButton(
+          onClick = {
+            if (canGoBack) {
+              view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+              onSelectPeriod(availablePeriods[currentIndex + 1])
             }
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-          verticalAlignment = Alignment.CenterVertically
+          },
+          enabled = canGoBack,
+          modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (canGoBack) NetTraceColors.Raised else Color.Transparent)
         ) {
-          if (period.isCurrent) {
-            Box(
-              modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(NetTraceColors.Mobile)
+          Icon(
+            imageVector = NetTraceIcons.ChevronLeft,
+            contentDescription = "Previous Month",
+            tint = if (canGoBack) NetTraceColors.TextPrimary else NetTraceColors.TextTertiary.copy(alpha = 0.35f),
+            modifier = Modifier.size(20.dp)
+          )
+        }
+
+        // Center Month Title & Subtitle
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          modifier = Modifier.weight(1f)
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+          ) {
+            if (selectedPeriod.isCurrent) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(NetTraceColors.Mobile)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+              text = selectedPeriod.title,
+              color = NetTraceColors.TextPrimary,
+              fontSize = 17.sp,
+              fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.width(6.dp))
           }
+
+          Spacer(modifier = Modifier.height(2.dp))
+
           Text(
-            text = period.title,
-            color = if (isSelected) NetTraceColors.TextPrimary else NetTraceColors.TextSecondary,
-            fontSize = 13.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            text = if (selectedPeriod.isCurrent) "Current Active Cycle" else "Completed Billing Period",
+            color = if (selectedPeriod.isCurrent) NetTraceColors.Mobile else NetTraceColors.TextTertiary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+          )
+        }
+
+        // Next Month Button (>)
+        IconButton(
+          onClick = {
+            if (canGoForward) {
+              view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+              onSelectPeriod(availablePeriods[currentIndex - 1])
+            }
+          },
+          enabled = canGoForward,
+          modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (canGoForward) NetTraceColors.Raised else Color.Transparent)
+        ) {
+          Icon(
+            imageVector = NetTraceIcons.ChevronRight,
+            contentDescription = "Next Month",
+            tint = if (canGoForward) NetTraceColors.TextPrimary else NetTraceColors.TextTertiary.copy(alpha = 0.35f),
+            modifier = Modifier.size(20.dp)
           )
         }
       }
@@ -154,7 +213,7 @@ fun HistoryScreen(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 2. Scrubbable Bar Chart Card for the Selected Period
+    // 2. Interactive Chart Card (Line Graph or Bar Chart)
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -172,7 +231,7 @@ fun HistoryScreen(
         ) {
           Column {
             Text(
-              text = if (selectedPeriod.isCurrent) "Daily Consumption" else "${selectedPeriod.shortLabel} Daily Breakdown",
+              text = if (selectedPeriod.isCurrent) "Daily Consumption" else "${selectedPeriod.shortLabel} Daily Trend",
               color = NetTraceColors.TextPrimary,
               fontSize = 18.sp,
               fontWeight = FontWeight.SemiBold
@@ -182,6 +241,116 @@ fun HistoryScreen(
               color = NetTraceColors.TextTertiary,
               fontSize = 12.sp
             )
+          }
+
+          // Line / Bar Chart Toggle
+          Row(
+            modifier = Modifier
+              .clip(RoundedCornerShape(12.dp))
+              .background(NetTraceColors.Raised)
+              .border(1.dp, NetTraceColors.Hairline, RoundedCornerShape(12.dp))
+              .padding(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+          ) {
+            ChartType.values().forEach { type ->
+              val isTypeSelected = (chartType == type)
+              val tabBg by animateColorAsState(
+                targetValue = if (isTypeSelected) NetTraceColors.Wifi else NetTraceColors.Raised,
+                animationSpec = tween(200),
+                label = "chart_tab_bg_${type.name}"
+              )
+
+              Box(
+                modifier = Modifier
+                  .clip(RoundedCornerShape(10.dp))
+                  .background(tabBg)
+                  .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                  ) {
+                    chartType = type
+                  }
+                  .padding(horizontal = 10.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text(
+                  text = type.label,
+                  color = if (isTypeSelected) NetTraceColors.Background else NetTraceColors.TextSecondary,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold
+                )
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Chart presentation with smooth cross-fade
+        AnimatedContent(
+          targetState = chartType,
+          transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+          label = "chart_animation"
+        ) { targetChart ->
+          when (targetChart) {
+            ChartType.LINE -> {
+              D3LineGraphCanvas(
+                dailyList = dailyList,
+                dailyPaceBytes = if (selectedPeriod.isCurrent) dailyPaceBytes else 0L,
+                onDaySelected = { selectedDay = it }
+              )
+            }
+            ChartType.BAR -> {
+              HistoryBarChartCanvas(
+                dailyList = dailyList,
+                dailyPaceBytes = if (selectedPeriod.isCurrent) dailyPaceBytes else 0L,
+                onDaySelected = { selectedDay = it }
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Legend
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(NetTraceColors.Mobile)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "Cellular",
+                color = NetTraceColors.TextSecondary,
+                fontSize = 12.sp
+              )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Box(
+                modifier = Modifier
+                  .size(8.dp)
+                  .clip(CircleShape)
+                  .background(NetTraceColors.Wifi)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "Total (Wi-Fi + Mobile)",
+                color = NetTraceColors.TextSecondary,
+                fontSize = 12.sp
+              )
+            }
           }
 
           if (selectedPeriod.isCurrent && dailyPaceBytes > 0) {
@@ -196,69 +365,9 @@ fun HistoryScreen(
               Text(
                 text = "Pace target",
                 color = NetTraceColors.TextTertiary,
-                fontSize = 12.sp
+                fontSize = 11.sp
               )
             }
-          } else {
-            Box(
-              modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(NetTraceColors.Raised)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-              Text(
-                text = "Historical",
-                color = NetTraceColors.TextTertiary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-              )
-            }
-          }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        HistoryBarChartCanvas(
-          dailyList = dailyList,
-          dailyPaceBytes = if (selectedPeriod.isCurrent) dailyPaceBytes else 0L,
-          onDaySelected = { selectedDay = it }
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Legend
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(NetTraceColors.Mobile)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = "Cellular",
-              color = NetTraceColors.TextSecondary,
-              fontSize = 12.sp
-            )
-          }
-
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(NetTraceColors.Wifi)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = "Wi-Fi",
-              color = NetTraceColors.TextSecondary,
-              fontSize = 12.sp
-            )
           }
         }
       }
@@ -419,32 +528,29 @@ fun HistoryScreen(
 
     // 5. Top Applications for the Selected Month (if available)
     if (topAppsForPeriod.isNotEmpty()) {
-      Spacer(modifier = Modifier.height(16.dp))
+      Spacer(modifier = Modifier.height(20.dp))
 
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(24.dp))
-          .background(NetTraceColors.Surface)
-          .border(1.dp, NetTraceColors.Hairline, RoundedCornerShape(24.dp))
-          .padding(18.dp)
-      ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-          Text(
-            text = "Top Apps for ${selectedPeriod.shortLabel}",
-            color = NetTraceColors.TextPrimary,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-          )
-          Text(
-            text = "Highest data consumers during this period",
-            color = NetTraceColors.TextTertiary,
-            fontSize = 11.sp
-          )
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+          text = "Top Apps for ${selectedPeriod.shortLabel}",
+          color = NetTraceColors.TextPrimary,
+          fontSize = 18.sp,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = (-0.3).sp
+        )
+        Text(
+          text = "Highest data consumers during this billing period",
+          color = NetTraceColors.TextTertiary,
+          fontSize = 12.sp
+        )
 
-          Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-          val maxAppBytes = topAppsForPeriod.firstOrNull()?.totalBytes ?: 1L
+        val maxAppBytes = topAppsForPeriod.firstOrNull()?.totalBytes ?: 1L
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
           topAppsForPeriod.forEachIndexed { idx, app ->
             AppUsageBarItem(
               item = app,

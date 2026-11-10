@@ -81,6 +81,8 @@ fun SettingsScreen(
   cycleResetDay: Int,
   alertThresholdPercent: Int,
   alertsEnabled: Boolean,
+  dailyLimitMb: Long = 0L,
+  dailyAlertsEnabled: Boolean = false,
   activeSims: List<SimInfo>,
   dailyList: List<DailyUsage>,
   simEntries: List<SimLogEntry>,
@@ -91,6 +93,8 @@ fun SettingsScreen(
   onUpdateResetDay: (Int) -> Unit,
   onUpdateThreshold: (Int) -> Unit,
   onToggleAlerts: (Boolean) -> Unit,
+  onUpdateDailyLimit: (Long) -> Unit = {},
+  onToggleDailyAlerts: (Boolean) -> Unit = {},
   onNavigateBack: () -> Unit,
   modifier: Modifier = Modifier
 ) {
@@ -436,6 +440,134 @@ fun SettingsScreen(
         fontSize = 11.sp,
         lineHeight = 15.sp
       )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // Section 2B: Daily Cellular Budget & Overage Warnings
+    var localDailyLimitMb by remember(dailyLimitMb) {
+      mutableStateOf(if (dailyLimitMb > 0L) dailyLimitMb.toString() else "1024")
+    }
+
+    SettingsCard(title = "Daily Cellular Budget") {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "Daily Overage Warning",
+            color = NetTraceColors.TextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium
+          )
+          Text(
+            text = "Alert immediately when today's mobile usage exceeds quota",
+            color = NetTraceColors.TextTertiary,
+            fontSize = 12.sp
+          )
+        }
+        Switch(
+          checked = dailyAlertsEnabled,
+          onCheckedChange = { enable ->
+            if (enable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+              notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+              onToggleDailyAlerts(enable)
+              if (enable && dailyLimitMb <= 0L) {
+                onUpdateDailyLimit(1024L) // Default 1 GB daily
+              }
+            }
+          },
+          colors = SwitchDefaults.colors(
+            checkedThumbColor = NetTraceColors.TextPrimary,
+            checkedTrackColor = NetTraceColors.Mobile,
+            uncheckedThumbColor = NetTraceColors.TextTertiary,
+            uncheckedTrackColor = NetTraceColors.Raised
+          )
+        )
+      }
+
+      if (dailyAlertsEnabled) {
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+          text = "Daily Limit Allowance",
+          color = NetTraceColors.TextSecondary,
+          fontSize = 13.sp
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Quick Presets Row
+        val presets = listOf(500L, 1024L, 1536L, 2048L, 3072L)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          presets.forEach { presetMb ->
+            val isSelected = (dailyLimitMb == presetMb)
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isSelected) NetTraceColors.Mobile else NetTraceColors.Raised)
+                .border(
+                  width = 1.dp,
+                  color = if (isSelected) NetTraceColors.Mobile else NetTraceColors.Hairline,
+                  shape = RoundedCornerShape(10.dp)
+                )
+                .clickable {
+                  localDailyLimitMb = presetMb.toString()
+                  onUpdateDailyLimit(presetMb)
+                }
+                .padding(vertical = 8.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = if (presetMb >= 1024L) "${presetMb / 1024} GB" else "${presetMb} MB",
+                color = if (isSelected) NetTraceColors.Background else NetTraceColors.TextPrimary,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+          value = localDailyLimitMb,
+          onValueChange = { input ->
+            val filtered = input.filter { it.isDigit() }
+            localDailyLimitMb = filtered
+            filtered.toLongOrNull()?.let { onUpdateDailyLimit(it) }
+          },
+          label = { Text("Custom Daily Limit (MB)") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = NetTraceColors.Mobile,
+            unfocusedBorderColor = NetTraceColors.Hairline,
+            focusedTextColor = NetTraceColors.TextPrimary,
+            unfocusedTextColor = NetTraceColors.TextPrimary,
+            focusedLabelColor = NetTraceColors.Mobile,
+            unfocusedLabelColor = NetTraceColors.TextTertiary
+          ),
+          shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+          text = "NetTrace checks hourly and sends an alert when your phone reaches this threshold in a single day.",
+          color = NetTraceColors.TextTertiary,
+          fontSize = 11.sp,
+          lineHeight = 15.sp
+        )
+      }
     }
 
     Spacer(modifier = Modifier.height(16.dp))

@@ -35,6 +35,8 @@ class SimUsageSamplingWorker(
     try {
       sampleMobileBytesAndCreditActiveSim()
       checkBillingCycleAlertThresholds()
+      checkDailyLimitThresholds()
+      checkPerAppLimits()
       return Result.success()
     } catch (_: Exception) {
       return Result.retry()
@@ -138,6 +140,64 @@ class SimUsageSamplingWorker(
           )
           dataStoreRepo.setAlertedForCycle(cycleKey)
           break // Alert once per cycle
+        }
+      }
+    }
+  }
+
+  /**
+   * Checks today's mobile data consumption against the user-configured daily mobile limit.
+   */
+  private suspend fun checkDailyLimitThresholds() {
+    val dailyAlertsEnabled = dataStoreRepo.dailyAlertsEnabledFlow.first()
+    if (!dailyAlertsEnabled) return
+
+    val dailyLimitMb = dataStoreRepo.dailyLimitMbFlow.first()
+    if (dailyLimitMb <= 0L) return
+
+    val currentEpochDay = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis())
+    if (dataStoreRepo.hasAlertedDailyToday(currentEpochDay)) {
+      return // Already alerted for today
+    }
+
+    val resetDay = dataStoreRepo.cycleResetDayFlow.first()
+    val (todayStart, todayEnd) = networkStatsRepo.getRangeTimestamps(com.example.data.model.UsageRange.TODAY, resetDay)
+    val totals = networkStatsRepo.queryDeviceTotals(todayStart, todayEnd)
+    val todayMobileBytes = totals.totalMobileBytes
+    val dailyLimitBytes = dailyLimitMb * 1024L * 1024L
+
+    if (todayMobileBytes >= dailyLimitBytes) {
+      notificationManager.postDailyLimitAlert(
+        usedFormatted = UsageFormatters.formatBytes(todayMobileBytes),
+        limitFormatted = UsageFormatters.formatBytes(dailyLimitBytes)
+      )
+      dataStoreRepo.setAlertedDailyToday(currentEpochDay)
+    }
+  }
+
+  /**
+   * Evaluates per-app consumption ceilings in the current billing cycle and alerts if an app crosses its ceiling.
+   */
+  private suspend fun checkPerAppLimits() {
+    val appLimits = dataStoreRepo.getAppLimits()
+    if (appLimits.isEmpty()) return
+
+    val currentEpochDay = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis())
+    val resetDay = dataStoreRepo.cycleResetDayFlow.first()
+    val (cycleStart, cycleEnd) = networkStatsRepo.calculateBillingCycleRange(resetDay)
+    val appUsageList = networkStatsRepo.queryAppUsage(cycleStart, cycleEnd, limit = 50)
+
+    for (app in appUsageList) {
+      val limitBytes = appLimits[app.packageName] ?: continue
+      if (app.totalBytes >= limitBytes) {
+        if (!dataStoreRepo.hasAlertedAppToday(app.packageName, currentEpochDay)) {
+          notificationManager.postAppLimitAlert(
+            appName = app.appName,
+            usedFormatted = UsageFormatters.formatBytes(app.totalBytes),
+            limitFormatted = UsageFormatters.formatBytes(limitBytes),
+            appUid = app.uid
+          )
+          dataStoreRepo.setAlertedAppToday(app.packageName, currentEpochDay)
         }
       }
     }

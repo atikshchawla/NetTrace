@@ -222,7 +222,8 @@ class NetworkStatsRepository(private val context: Context) {
     val cal = Calendar.getInstance()
     val now = System.currentTimeMillis()
 
-    for (i in 0 until monthsCount) {
+    // Chronological order: from oldest month to current month
+    for (i in (monthsCount - 1) downTo 0) {
       val monthCal = (cal.clone() as Calendar).apply {
         add(Calendar.MONTH, -i)
         set(Calendar.DAY_OF_MONTH, 1)
@@ -242,13 +243,16 @@ class NetworkStatsRepository(private val context: Context) {
       }
       val endMs = if (i == 0) now else endCal.timeInMillis
 
-      val monthTitleFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+      val monthNameFormat = SimpleDateFormat("MMMM", Locale.getDefault())
       val shortFormat = SimpleDateFormat("MMM", Locale.getDefault())
       val idFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
 
-      val title = if (i == 0) "This Month (${shortFormat.format(monthCal.time)})" else monthTitleFormat.format(monthCal.time)
+      val monthName = monthNameFormat.format(monthCal.time)
       val shortLabel = shortFormat.format(monthCal.time)
       val id = idFormat.format(monthCal.time)
+
+      // No year mentioned in title or label
+      val title = if (i == 0) "This Month ($shortLabel)" else monthName
 
       list.add(
         MonthPeriod(

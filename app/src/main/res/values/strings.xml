@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">NetTrace</string>
+    <string name="widget_name">NetTrace Glance</string>
+    <string name="widget_description">At-a-glance cellular data remaining, today\'s usage, and cycle pacing</string>
 </resources>

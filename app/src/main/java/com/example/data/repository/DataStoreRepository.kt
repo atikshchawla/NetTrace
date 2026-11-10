@@ -34,10 +34,28 @@ class DataStoreRepository(private val context: Context) {
     val LAST_ALERTED_CYCLE_KEY = stringPreferencesKey("last_alerted_cycle_key")
     val SIM_DAILY_LOG = stringPreferencesKey("sim_daily_log")
     val THEME_MODE = stringPreferencesKey("theme_mode")
+    val DAILY_LIMIT_MB = longPreferencesKey("daily_limit_mb")
+    val DAILY_ALERTS_ENABLED = booleanPreferencesKey("daily_alerts_enabled")
+    val LAST_ALERTED_DAILY_DAY = longPreferencesKey("last_alerted_daily_day")
+    val APP_LIMITS = stringPreferencesKey("app_limits")
+    val LAST_ALERTED_APP_LIMITS = stringPreferencesKey("last_alerted_app_limits")
   }
 
   val themeModeFlow: Flow<String> = context.dataStore.data.map { preferences ->
     preferences[Keys.THEME_MODE] ?: "system" // "system", "dark", "light" - default is system mode
+  }
+
+  val dailyLimitMbFlow: Flow<Long> = context.dataStore.data.map { preferences ->
+    preferences[Keys.DAILY_LIMIT_MB] ?: 0L // 0L means disabled / no limit
+  }
+
+  val dailyAlertsEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    preferences[Keys.DAILY_ALERTS_ENABLED] ?: false
+  }
+
+  val appLimitsFlow: Flow<Map<String, Long>> = context.dataStore.data.map { preferences ->
+    val raw = preferences[Keys.APP_LIMITS] ?: ""
+    parseAppLimits(raw)
   }
 
   val planSizeMbSim1Flow: Flow<Long> = context.dataStore.data.map { preferences ->
@@ -157,5 +175,80 @@ class DataStoreRepository(private val context: Context) {
     val prefs = context.dataStore.data.first()
     val raw = prefs[Keys.SIM_DAILY_LOG] ?: ""
     return raw.lines().mapNotNull { SimLogEntry.deserialize(it) }
+  }
+
+  suspend fun updateDailyLimit(mb: Long) {
+    context.dataStore.edit { it[Keys.DAILY_LIMIT_MB] = mb.coerceAtLeast(0L) }
+  }
+
+  suspend fun setDailyAlertsEnabled(enabled: Boolean) {
+    context.dataStore.edit { it[Keys.DAILY_ALERTS_ENABLED] = enabled }
+  }
+
+  suspend fun hasAlertedDailyToday(epochDay: Long): Boolean {
+    val prefs = context.dataStore.data.first()
+    return (prefs[Keys.LAST_ALERTED_DAILY_DAY] ?: -1L) == epochDay
+  }
+
+  suspend fun setAlertedDailyToday(epochDay: Long) {
+    context.dataStore.edit { it[Keys.LAST_ALERTED_DAILY_DAY] = epochDay }
+  }
+
+  suspend fun setAppLimit(packageName: String, limitBytes: Long) {
+    if (packageName.isBlank()) return
+    context.dataStore.edit { prefs ->
+      val current = parseAppLimits(prefs[Keys.APP_LIMITS] ?: "").toMutableMap()
+      if (limitBytes <= 0L) {
+        current.remove(packageName)
+      } else {
+        current[packageName] = limitBytes
+      }
+      prefs[Keys.APP_LIMITS] = current.entries.joinToString("\n") { "${it.key}:${it.value}" }
+    }
+  }
+
+  suspend fun removeAppLimit(packageName: String) {
+    setAppLimit(packageName, 0L)
+  }
+
+  suspend fun getAppLimits(): Map<String, Long> {
+    val prefs = context.dataStore.data.first()
+    return parseAppLimits(prefs[Keys.APP_LIMITS] ?: "")
+  }
+
+  suspend fun hasAlertedAppToday(packageName: String, epochDay: Long): Boolean {
+    val prefs = context.dataStore.data.first()
+    val raw = prefs[Keys.LAST_ALERTED_APP_LIMITS] ?: ""
+    val key = "$packageName:$epochDay"
+    return raw.lines().contains(key)
+  }
+
+  suspend fun setAlertedAppToday(packageName: String, epochDay: Long) {
+    context.dataStore.edit { prefs ->
+      val raw = prefs[Keys.LAST_ALERTED_APP_LIMITS] ?: ""
+      val key = "$packageName:$epochDay"
+      val lines = raw.lines().filter { it.isNotBlank() }.toMutableList()
+      if (!lines.contains(key)) {
+        lines.add(key)
+        // Keep at most 100 entries
+        val pruned = if (lines.size > 100) lines.takeLast(100) else lines
+        prefs[Keys.LAST_ALERTED_APP_LIMITS] = pruned.joinToString("\n")
+      }
+    }
+  }
+
+  companion object {
+    fun parseAppLimits(raw: String): Map<String, Long> {
+      if (raw.isBlank()) return emptyMap()
+      return raw.lines()
+        .filter { it.isNotBlank() && it.contains(":") }
+        .mapNotNull { line ->
+          val parts = line.split(":", limit = 2)
+          if (parts.size == 2) {
+            val limit = parts[1].toLongOrNull()
+            if (limit != null && limit > 0L) parts[0] to limit else null
+          } else null
+        }.toMap()
+    }
   }
 }

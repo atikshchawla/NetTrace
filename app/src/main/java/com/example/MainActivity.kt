@@ -55,16 +55,24 @@ import com.example.ui.theme.NetTraceColors
 import com.example.ui.theme.NetTraceTheme
 import kotlinx.coroutines.launch
 
+import androidx.lifecycle.lifecycleScope
+import com.example.data.telemetry.LiveThroughputManager
+import com.example.data.telemetry.ThroughputSample
+import com.example.widget.NetTraceWidgetProvider
+import kotlinx.coroutines.flow.StateFlow
+
 /**
  * NetTrace MainActivity:
  * Single-activity architecture hosting Home, Apps, History, and Settings.
- * Manages theme collection, runtime notification permission requests, multi-month historical inspection, and usage access.
+ * Manages theme collection, runtime notification permission requests, multi-month historical inspection,
+ * live throughput speed meter, daily data alerts, and home screen widgets.
  */
 class MainActivity : ComponentActivity() {
 
   private lateinit var networkStatsRepo: NetworkStatsRepository
   private lateinit var simManager: SimManager
   private lateinit var dataStoreRepo: DataStoreRepository
+  private val liveThroughputManager = LiveThroughputManager()
 
   private val hasPermissionState = mutableStateOf(false)
 
@@ -92,7 +100,8 @@ class MainActivity : ComponentActivity() {
           networkStatsRepo = networkStatsRepo,
           simManager = simManager,
           dataStoreRepo = dataStoreRepo,
-          themeMode = themeMode
+          themeMode = themeMode,
+          liveThroughputFlow = liveThroughputManager.throughputFlow
         )
       }
     }
@@ -101,6 +110,13 @@ class MainActivity : ComponentActivity() {
   override fun onResume() {
     super.onResume()
     checkPermissionStatus()
+    liveThroughputManager.start(lifecycleScope)
+    NetTraceWidgetProvider.updateAllWidgets(this)
+  }
+
+  override fun onPause() {
+    super.onPause()
+    liveThroughputManager.stop()
   }
 
   private fun checkPermissionStatus() {
@@ -115,7 +131,8 @@ fun NetTraceRootApp(
   networkStatsRepo: NetworkStatsRepository,
   simManager: SimManager,
   dataStoreRepo: DataStoreRepository,
-  themeMode: String
+  themeMode: String,
+  liveThroughputFlow: StateFlow<ThroughputSample>
 ) {
   val scope = rememberCoroutineScope()
 
@@ -147,12 +164,18 @@ fun NetTraceRootApp(
   var currentScreen by remember { mutableStateOf(Screen.HOME) }
   var appsRange by remember { mutableStateOf(UsageRange.TODAY) }
 
-  // Settings State
+  // Settings & Limit States
   val planSizeMbSim1 by dataStoreRepo.planSizeMbSim1Flow.collectAsState(initial = 10240L)
   val planSizeMbSim2 by dataStoreRepo.planSizeMbSim2Flow.collectAsState(initial = 10240L)
   val cycleResetDay by dataStoreRepo.cycleResetDayFlow.collectAsState(initial = 1)
   val alertThresholdPercent by dataStoreRepo.alertThresholdPercentFlow.collectAsState(initial = 80)
   val alertsEnabled by dataStoreRepo.alertsEnabledFlow.collectAsState(initial = true)
+  val dailyLimitMb by dataStoreRepo.dailyLimitMbFlow.collectAsState(initial = 0L)
+  val dailyAlertsEnabled by dataStoreRepo.dailyAlertsEnabledFlow.collectAsState(initial = false)
+  val appLimits by dataStoreRepo.appLimitsFlow.collectAsState(initial = emptyMap())
+
+  // Real-time live throughput
+  val liveThroughput by liveThroughputFlow.collectAsState()
 
   // Telemetry state
   var todayTotals by remember { mutableStateOf(UsageTotals()) }
@@ -179,7 +202,7 @@ fun NetTraceRootApp(
 
   // Multi-Month Historical Telemetry State
   val availablePeriods = remember { networkStatsRepo.getHistoricalMonthPeriods(6) }
-  var selectedPeriod by remember { mutableStateOf(availablePeriods.first()) }
+  var selectedPeriod by remember { mutableStateOf(availablePeriods.last()) }
   var historyDailyList by remember { mutableStateOf<List<DailyUsage>>(emptyList()) }
   var historyTopApps by remember { mutableStateOf<List<AppUsageItem>>(emptyList()) }
 
@@ -209,6 +232,9 @@ fun NetTraceRootApp(
 
       val (rangeStart, rangeEnd) = networkStatsRepo.getRangeTimestamps(appsRange, cycleResetDay)
       appUsageList = networkStatsRepo.queryAppUsage(rangeStart, rangeEnd, limit = 30)
+
+      // Refresh home screen widget with latest telemetry
+      NetTraceWidgetProvider.updateAllWidgets(context)
     } catch (_: Exception) {}
   }
 
@@ -262,12 +288,16 @@ fun NetTraceRootApp(
             planForecast = planForecast,
             activeSims = activeSims,
             sevenDaysHistory = thirtyDaysHistory,
+            liveThroughput = liveThroughput,
             onOpenSettings = { currentScreen = Screen.SETTINGS }
           )
           Screen.APPS -> AppsScreen(
             selectedRange = appsRange,
             onRangeSelected = { appsRange = it },
-            appList = appUsageList
+            appList = appUsageList,
+            appLimits = appLimits,
+            onSetAppLimit = { pkg, limit -> scope.launch { dataStoreRepo.setAppLimit(pkg, limit) } },
+            onRemoveAppLimit = { pkg -> scope.launch { dataStoreRepo.removeAppLimit(pkg) } }
           )
           Screen.HISTORY -> HistoryScreen(
             availablePeriods = availablePeriods,
@@ -285,6 +315,8 @@ fun NetTraceRootApp(
             cycleResetDay = cycleResetDay,
             alertThresholdPercent = alertThresholdPercent,
             alertsEnabled = alertsEnabled,
+            dailyLimitMb = dailyLimitMb,
+            dailyAlertsEnabled = dailyAlertsEnabled,
             activeSims = activeSims,
             dailyList = thirtyDaysHistory,
             simEntries = simEntries,
@@ -295,6 +327,8 @@ fun NetTraceRootApp(
             onUpdateResetDay = { scope.launch { dataStoreRepo.updateCycleResetDay(it) } },
             onUpdateThreshold = { scope.launch { dataStoreRepo.updateAlertThreshold(it) } },
             onToggleAlerts = { scope.launch { dataStoreRepo.setAlertsEnabled(it) } },
+            onUpdateDailyLimit = { scope.launch { dataStoreRepo.updateDailyLimit(it) } },
+            onToggleDailyAlerts = { scope.launch { dataStoreRepo.setDailyAlertsEnabled(it) } },
             onNavigateBack = { currentScreen = Screen.HOME }
           )
         }

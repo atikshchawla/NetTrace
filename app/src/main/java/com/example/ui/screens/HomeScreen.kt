@@ -36,7 +36,9 @@ import com.example.data.model.PlanForecast
 import com.example.data.model.SimInfo
 import com.example.data.model.UsageFormatters
 import com.example.data.model.UsageTotals
+import com.example.data.telemetry.ThroughputSample
 import com.example.ui.components.DualSimDonutCanvas
+import com.example.ui.components.LiveBandwidthMeter
 import com.example.ui.components.NetTraceIcons
 import com.example.ui.components.PlanRingCanvas
 import com.example.ui.components.SparklineCanvas
@@ -46,8 +48,8 @@ import com.example.ui.theme.pressScaleEffect
 
 /**
  * NetTrace Home Screen:
- * Displays plan ring, forecast pacing, today's stacked Wi-Fi/mobile bar,
- * 7-day sparkline, and active SIM chips when dual-SIM is detected.
+ * Displays plan ring, forecast pacing, live bandwidth & speed meter,
+ * today's stacked Wi-Fi/mobile bar, 7-day sparkline, and active SIM chips when dual-SIM is detected.
  */
 @Composable
 fun HomeScreen(
@@ -57,6 +59,7 @@ fun HomeScreen(
   planForecast: PlanForecast,
   activeSims: List<SimInfo>,
   sevenDaysHistory: List<DailyUsage>,
+  liveThroughput: ThroughputSample = ThroughputSample(),
   onOpenSettings: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
@@ -235,6 +238,11 @@ fun HomeScreen(
         }
       }
     }
+
+    Spacer(modifier = Modifier.height(16.dp))
+ 
+    // Real-Time Live Bandwidth & Speed Meter
+    LiveBandwidthMeter(sample = liveThroughput)
 
     Spacer(modifier = Modifier.height(16.dp))
 
